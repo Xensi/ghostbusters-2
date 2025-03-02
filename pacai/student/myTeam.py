@@ -1,4 +1,6 @@
 from pacai.util import reflection
+from pacai.agents.capture.custom import AttackAgent
+from pacai.agents.capture.custom import DefenseAgent
 
 def createTeam(firstIndex, secondIndex, isRed,
         first = 'pacai.agents.capture.custom.AttackAgent',
@@ -10,8 +12,10 @@ def createTeam(firstIndex, secondIndex, isRed,
     and will be False if the blue team is being created.
     """
 
-    firstAgent = reflection.qualifiedImport(first)
-    secondAgent = reflection.qualifiedImport(second)
+    firstAgent = AttackAgent
+    secondAgent = AttackAgent
+    # firstAgent = reflection.qualifiedImport(first)
+    # secondAgent = reflection.qualifiedImport(second)
 
     return [
         firstAgent(firstIndex),

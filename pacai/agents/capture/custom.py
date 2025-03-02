@@ -1,57 +1,96 @@
-import random
+from pacai.agents.capture.reflex import ReflexCaptureAgent
 
-from pacai.agents.capture.capture import CaptureAgent
-
-class AttackAgent(CaptureAgent):
+class AttackAgent(ReflexCaptureAgent):
     """
-    """
-
-    def __init__(self, index, **kwargs):
-        super().__init__(index, **kwargs)
-
-    def registerInitialState(self, gameState):
-        """
-        This method handles the initial setup of the agent and populates useful fields,
-        such as the team the agent is on and the `pacai.core.distanceCalculator.Distancer`.
-
-        IMPORTANT: If this method runs for more than 15 seconds, your agent will time out.
-        """
-
-        super().registerInitialState(gameState)
-
-        # Your initialization code goes here, if you need any.
-
-    def chooseAction(self, gameState):
-        """
-        Randomly pick an action.
-        """
-
-        actions = gameState.getLegalActions(self.index)
-        return random.choice(actions)
-
-class DefenseAgent(CaptureAgent):
-    """
+    A reflex agent that seeks food.
+    This agent will give you an idea of what an offensive agent might look like,
+    but it is by no means the best or only way to build an offensive agent.
     """
 
     def __init__(self, index, **kwargs):
-        super().__init__(index, **kwargs)
+        super().__init__(index)
 
-    def registerInitialState(self, gameState):
-        """
-        This method handles the initial setup of the agent and populates useful fields,
-        such as the team the agent is on and the `pacai.core.distanceCalculator.Distancer`.
+    def getFeatures(self, gameState, action):
+        # Defines agent priorities
+        # Other things offensive agent could care about:
+        # If we're on our side and there are enemies on our side,
+        # we can attack them
+        # Closest scared enemy ghost
+        # Closest non-scared enemy ghost
+        # Closest dot
+        
 
-        IMPORTANT: If this method runs for more than 15 seconds, your agent will time out.
-        """
+        # if (myState.isPacman()):
 
-        super().registerInitialState(gameState)
 
-        # Your initialization code goes here, if you need any.
+        features = {}
+        # Get the successor for taking an action
+        successor = self.getSuccessor(gameState, action)
+        features['successorScore'] = self.getScore(successor)
 
-    def chooseAction(self, gameState):
-        """
-        Randomly pick an action.
-        """
+        # Compute distance to the nearest food.
+        foodList = self.getFood(successor).asList()
 
-        actions = gameState.getLegalActions(self.index)
-        return random.choice(actions)
+        # This should always be True, but better safe than sorry.
+        if (len(foodList) > 0):
+            myPos = successor.getAgentState(self.index).getPosition()
+            minDistance = min([self.getMazeDistance(myPos, food) for food in foodList])
+            features['distanceToFood'] = minDistance
+        
+        return features
+
+    def getWeights(self, gameState, action):
+        # Note: Negative score for distance to food causes agents to pursue food
+        return {
+            'successorScore': 100,
+            'distanceToFood': -1
+        }
+
+class DefenseAgent(ReflexCaptureAgent):
+    """
+    A reflex agent that tries to keep its side Pacman-free.
+    This is to give you an idea of what a defensive agent could be like.
+    It is not the best or only way to make such an agent.
+    """
+
+    def __init__(self, index, **kwargs):
+        super().__init__(index)
+
+    def getFeatures(self, gameState, action):
+        features = {}
+
+        successor = self.getSuccessor(gameState, action)
+        myState = successor.getAgentState(self.index)
+        myPos = myState.getPosition()
+
+        # Computes whether we're on defense (1) or offense (0).
+        features['onDefense'] = 1
+        if (myState.isPacman()):
+            features['onDefense'] = 0
+
+        # Computes distance to invaders we can see.
+        enemies = [successor.getAgentState(i) for i in self.getOpponents(successor)]
+        invaders = [a for a in enemies if a.isPacman() and a.getPosition() is not None]
+        features['numInvaders'] = len(invaders)
+
+        if (len(invaders) > 0):
+            dists = [self.getMazeDistance(myPos, a.getPosition()) for a in invaders]
+            features['invaderDistance'] = min(dists)
+
+        if (action == Directions.STOP):
+            features['stop'] = 1
+
+        rev = Directions.REVERSE[gameState.getAgentState(self.index).getDirection()]
+        if (action == rev):
+            features['reverse'] = 1
+
+        return features
+
+    def getWeights(self, gameState, action):
+        return {
+            'numInvaders': -1000,
+            'onDefense': 100,
+            'invaderDistance': -10,
+            'stop': -100,
+            'reverse': -2
+        }
