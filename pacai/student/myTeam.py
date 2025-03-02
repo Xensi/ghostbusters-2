@@ -13,7 +13,7 @@ def createTeam(firstIndex, secondIndex, isRed,
     """
 
     firstAgent = AttackAgent
-    secondAgent = AttackAgent
+    secondAgent = DefenseAgent
     # firstAgent = reflection.qualifiedImport(first)
     # secondAgent = reflection.qualifiedImport(second)
 
