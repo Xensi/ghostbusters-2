@@ -16,16 +16,20 @@ class AttackAgent(ReflexCaptureAgent):
         features = {}
         # Other things offensive agent could care about:
         # Closest scared enemy ghost
-        # Distance to friendly agent
         # Distance to power pellet
         # Bias towards clusters of food
+        # If we're winning by a lot, defend?
+        # If there's not much time left, attack?
+        # Get num capsules from now to successor;
+        # Reduced capsules is good
+        
 
         # Stopping is bad
         if (action == Directions.STOP):
             features['stop'] = float('-inf')
             return features
 
-        # Get the successor for taking an action
+        # Get the successor game state for taking an action
         successor = self.getSuccessor(gameState, action)
         myState = successor.getAgentState(self.index)
         # getScore returns diff between your score
@@ -35,6 +39,8 @@ class AttackAgent(ReflexCaptureAgent):
 
         # List of food we can eat
         foodList = self.getFood(successor).asList()
+        
+        capsules = self.getCapsules(successor)
         
         myPos = successor.getAgentState(self.index).getPosition()
 
@@ -62,6 +68,7 @@ class AttackAgent(ReflexCaptureAgent):
             minDistance = min([self.getMazeDistance(myPos, ally.getPosition()) for ally in allies])
             features['distanceToAlly'] = minDistance
         
+        closeGhost = False
         # If we're a pacman, fear ghosts
         if (len(ghosts) > 0 and myState.isPacman()):
             minDistance = min([self.getMazeDistance(myPos, ghost.getPosition()) for ghost in ghosts])
@@ -70,24 +77,31 @@ class AttackAgent(ReflexCaptureAgent):
             # Otherwise, the agent will be paralyzed in fear!
             # The higher the distance, the better
             if minDistance <= fearThreshold:
+                closeGhost = True
                 features['distanceToGhost'] = minDistance
             else:
-                features['distanceToGhost'] = 0
+                features['distanceToGhost'] = minDistance * 0.25  # Have smaller fear when not close
 
         # If anyone is invading and we're a ghost, let's go get em
         invaderClose = False
-        if (len(invaders) > 0 and not myState.isPacman()):
+        if (len(invaders) > 0):
             minDistance = min([self.getMazeDistance(myPos, a.getPosition()) for a in invaders])
-            hungerThreshold = 3
+            hungerThreshold = 5
             if minDistance <= hungerThreshold:
                 invaderClose = True
-            features['invaderDistance'] = minDistance
+            if (invaderClose or not myState.isPacman()):
+                features['invaderDistance'] = minDistance
         
         # Reversing is bad because we make no progress that way
-        # However, if there's a ghost we can eat, that changes things
+        # However, if there's a ghost very close to us, we merely discourage it
         rev = Directions.REVERSE[gameState.getAgentState(self.index).getDirection()]
         if (action == rev):
-            features['reverse'] = -100
+            if closeGhost:
+                features['reverse'] = -50
+            else:
+                features['reverse'] = -100
+
+
         # print(features)
         return features
 
@@ -97,8 +111,8 @@ class AttackAgent(ReflexCaptureAgent):
             'reverse': 1,
             'successorScore': 1000,
             'distanceToFood': -100,
-            'distanceToGhost': 100,
-            'invaderDistance': -500,
+            'distanceToGhost': 500,
+            'invaderDistance': -1000,
             'distanceToAlly': 1,
         }
 
