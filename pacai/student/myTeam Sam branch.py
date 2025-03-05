@@ -209,6 +209,8 @@ class OffensiveABAgent(ABPruningCaptureAgent):
             'numCapsules': -100,
             'frozen': -10,
             'attacking': 1,
+            'numInvaders': -100,
+            'distanceToInvader': 100,
         }
         myState = gameState.getAgentState(self.index)
         myPos = gameState.getAgentState(self.index).getPosition()
@@ -225,7 +227,6 @@ class OffensiveABAgent(ABPruningCaptureAgent):
         # allies = [gameState.getAgentState(i) for i in self.getTeam(gameState) if i != self.index]
         enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
         ghosts = [a for a in enemies if not a.isPacman() and a.getPosition() is not None]
-        # invaders = [a for a in enemies if a.isPacman() and a.getPosition() is not None]
         # Compute distance to the nearest food.
         foodList = self.getFood(gameState).asList()
         if (len(foodList) > 0):
@@ -239,6 +240,15 @@ class OffensiveABAgent(ABPruningCaptureAgent):
         features['numCapsules'] = len(capsuleList)  # incentivize eating capsules
 
         features['numberOfGhosts'] = len(ghosts)  # incentivizes us to reduce num ghosts
+
+        invaders = [a for a in enemies if a.isPacman() and a.getPosition() is not None]
+        features['numInvaders'] = len(invaders)
+        # if there's an invader and we're a ghost
+        features['distanceToInvader'] = 0
+        if (len(invaders) > 0 and not myState.isPacman()):
+            dists = [self.getMazeDistance(myPos, a.getPosition()) for a in invaders]
+            features['distanceToInvader'] = 1 / (min(dists) + 1)
+            # incentivize agent to reduce the number of invaders by eating them
 
         stateEval = sum(features[feature] * weights[feature] for feature in features)
         return stateEval
