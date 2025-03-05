@@ -39,8 +39,7 @@ def defense_evaluation(self, currentGameState):
         enemyPos = currentGameState.getAgentState(enemy).getPosition()
         if enemyPos is not None: #if there are enemies
             distance = self.getMazeDistance(myPos, enemyPos) #get the distance between enemy and me
-            distance = distance + 1 #so that we don't divide by 0 in the next line
-            score += ( 1 / distance ) * enemyweight
+            score += ( 1 / (distance ** 2 + 1) ) * enemyweight
             ##the following lines are another implementation that I think is worse
             #if distance <= 5: #how close should it be? #
             #    enemyProximity += 1
@@ -60,16 +59,14 @@ def defense_evaluation(self, currentGameState):
     capsules = self.getCapsules()
     if capsules: #if there are available capsules
         nearestCapsuleDist = min([self.getMazeDistance(myPos, capsule) for capsule in capsules)])
-        nearestCapsuleDist = nearestCapsuleDist + 1
-        score += (1 / nearestCapsuleDist) * capsuleweight
+        score += (1 / (nearestCapsuleDist ** 2 + 1)) * capsuleweight
 
     #Third Factor: Proximity to defended food
     DefendFood = self.getFoodYouAreDefending(currentGameState)
     if DefendFood: #if there is some food to defend
         foodPositions = DefendFood.asList()
         nearestFoodDist = min([self.getMazeDistance(myPos, food) for food in foodPositions])
-        nearestFoodDist = nearestFoodDist + 1
-        score += (1 / nearestFoodDist) * foodweight
+        score += (1 / (nearestFoodDist ** 2 + 1)) * foodweight
 
     return score
 
