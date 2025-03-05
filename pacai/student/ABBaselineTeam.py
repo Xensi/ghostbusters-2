@@ -47,10 +47,9 @@ class ABPruningCaptureAgent(CaptureAgent):
         opponents = self.getOpponents(gameState)
         for opp in opponents:
             self.agentAndEnemiesIndices.append(opp)
-        self.depth = 2  # seems like we cannot handle depth 3+
+        self.depth = 1  # seems like we cannot handle depth 3+
         self.startAlpha = float('-inf')
         self.startBeta = float('inf')
-        self.totalTime = gameState.getTimeleft()
 
     def chooseAction(self, gameState):
         """
@@ -131,114 +130,35 @@ class ABPruningCaptureAgent(CaptureAgent):
         stateEval = sum(features[feature] * weights[feature] for feature in features)
         return stateEval
 
-
 class OffensiveABAgent(ABPruningCaptureAgent):
     """
     An offensive version of the AB pruning agent.
     """
-    def registerInitialState(self, gameState):
-        """
-        This method handles the initial setup of the agent and populates useful fields,
-        such as the team the agent is on and the `pacai.core.distanceCalculator.Distancer`.
-        """
-        super().registerInitialState(gameState)
-        self.depth = 2
-        self.stuckTime = 0
-
-    def chooseAction(self, gameState):
-        """
-        Use AB pruning to find the best action.
-        """
-        legalMoves = gameState.getLegalActions(self.index)
-        # check if we're in a stalemate
-        myPos = gameState.getAgentState(self.index).getPosition()
-        prevState = self.getPreviousObservation()
-        if prevState is not None:
-            prevPos = prevState.getAgentState(self.index).getPosition()
-            if (myPos == prevPos):
-                if self.stuckTime >= 10:
-                    return random.choice(legalMoves)
-                    self.stuckTime = 0
-                else:
-                    self.stuckTime += 1
-        # end of stalemate checker
-        # We only want to apply AB pruning with our agent and the most hostile enemy agent
-        # i.e. the closest enemy
-        # enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
-        opponents = self.getOpponents(gameState)
-        closestEnemyIndex = opponents[0]
-        minDist = float('inf')
-        for oppIndex in opponents:
-            enemy = gameState.getAgentState(oppIndex)
-            dist = self.getMazeDistance(myPos, enemy.getPosition())
-            if dist < minDist:
-                minDist = dist
-                closestEnemyIndex = oppIndex
-        self.agentAndEnemiesIndices = [self.index, closestEnemyIndex]
-        # End of updating closest enemy index
-
-        successors = [self.getSuccessor(gameState, action, self.index) for action in legalMoves]
-        scores = []
-        # Simulate our agent acting by first looking at a successor
-        # start ABPruning at 1 to simulate enemy agents acting after our agent "acts"
-        for successor in successors:
-            scores.append(self.ABPrune(successor, self.depth, 1, self.startAlpha, self.startBeta))
-        bestScore = max(scores)
-        # explanation: a at start means don't change the value of the retrieved item;
-        # and only retrieve items that have max value
-        bestActions = [a for a, s in zip(legalMoves, scores) if s == bestScore]
-        return random.choice(bestActions)
-
     def evaluate(self, gameState):
         """
         Look ahead agents evaluate future states, not actions from the
         current state.
         Computes a linear combination of features and feature weights.
         """
-        return self.offensiveEval(gameState)
+        return self.baselineEval(gameState)
 
-    def offensiveEval(self, gameState):
+    def baselineEval(self, gameState):
         features = {
             'successorScore': self.getScore(gameState)
         }
         weights = {
             'successorScore': 100,
-            'distanceToFood': 10,
-            'numberOfGhosts': -1000,
-            'distanceToCapsule': 20,
-            'numCapsules': -100,
-            'frozen': -10,
-            'attacking': 1,
+            'distanceToFood': -1
         }
-        myState = gameState.getAgentState(self.index)
-        myPos = gameState.getAgentState(self.index).getPosition()
-        prevState = self.getPreviousObservation()
-        if prevState is not None:
-            prevPos = prevState.getAgentState(self.index).getPosition()
-            if (myPos == prevPos):
-                features['frozen'] = 1  # disincentivize freezing up
-
-        features['attacking'] = 0
-        if (myState.isPacman()):
-            features['attacking'] = 1
-
-        # allies = [gameState.getAgentState(i) for i in self.getTeam(gameState) if i != self.index]
-        enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
-        ghosts = [a for a in enemies if not a.isPacman() and a.getPosition() is not None]
-        # invaders = [a for a in enemies if a.isPacman() and a.getPosition() is not None]
+        
         # Compute distance to the nearest food.
         foodList = self.getFood(gameState).asList()
-        if (len(foodList) > 0):
-            minDistance = min([self.getMazeDistance(myPos, food) for food in foodList])
-            features['distanceToFood'] = 1 / minDistance**2 + 1
-        
-        capsuleList = self.getCapsules(gameState)
-        if (len(capsuleList) > 0):
-            minDistance = min([self.getMazeDistance(myPos, capsule) for capsule in capsuleList])
-            features['distanceToCapsule'] = 1 / minDistance + 1  # try to go for capsules more
-        features['numCapsules'] = len(capsuleList)  # incentivize eating capsules
 
-        features['numberOfGhosts'] = len(ghosts)  # incentivizes us to reduce num ghosts
+        # This should always be True, but better safe than sorry.
+        if (len(foodList) > 0):
+            myPos = gameState.getAgentState(self.index).getPosition()
+            minDistance = min([self.getMazeDistance(myPos, food) for food in foodList])
+            features['distanceToFood'] = minDistance
 
         stateEval = sum(features[feature] * weights[feature] for feature in features)
         return stateEval
@@ -255,41 +175,7 @@ class DefensiveABAgent(ABPruningCaptureAgent):
         such as the team the agent is on and the `pacai.core.distanceCalculator.Distancer`.
         """
         super().registerInitialState(gameState)
-        self.depth = 2
-        self.stuckTime = 0
-        
-    def chooseAction(self, gameState):
-        """
-        Use AB pruning to find the best action.
-        """
-        legalMoves = gameState.getLegalActions(self.index)
-        myPos = gameState.getAgentState(self.index).getPosition()
-        # Defender should only AB prune on the closest invader
-        # enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
-        opponents = self.getOpponents(gameState)
-        closestEnemyIndex = opponents[0]
-        minDist = float('inf')
-        for oppIndex in opponents:
-            enemy = gameState.getAgentState(oppIndex)
-            if enemy.isPacman() and enemy.getPosition is not None:
-                dist = self.getMazeDistance(myPos, enemy.getPosition())
-                if dist < minDist:
-                    minDist = dist
-                    closestEnemyIndex = oppIndex
-        self.agentAndEnemiesIndices = [self.index, closestEnemyIndex]
-        # End of updating closest enemy index
-
-        successors = [self.getSuccessor(gameState, action, self.index) for action in legalMoves]
-        scores = []
-        # Simulate our agent acting by first looking at a successor
-        # start ABPruning at 1 to simulate enemy agents acting after our agent "acts"
-        for successor in successors:
-            scores.append(self.ABPrune(successor, self.depth, 1, self.startAlpha, self.startBeta))
-        bestScore = max(scores)
-        # explanation: a at start means don't change the value of the retrieved item;
-        # and only retrieve items that have max value
-        bestActions = [a for a, s in zip(legalMoves, scores) if s == bestScore]
-        return random.choice(bestActions)
+        self.depth = 0
 
     def evaluate(self, gameState):
         """
@@ -297,48 +183,31 @@ class DefensiveABAgent(ABPruningCaptureAgent):
         current state.
         Computes a linear combination of features and feature weights.
         """
-        return self.defensiveEval(gameState)
+        return self.baselineEval(gameState)
     
-    def defensiveEval(self, gameState):
-        
-        features = {
-            'distanceToEnemies': 0
-        }
+    def baselineEval(self, gameState):
+        features = {}
         weights = {
-            'distanceToEnemies': 1,
-            'distanceToInvader': 100,
-            'onDefense': 1000,
             'numInvaders': -1000,
-            'frozen': -1
+            'onDefense': 100,
+            'invaderDistance': -10,
         }
-        # idea: defensive should be able to hunt down nearby scared ghosts
-
         myState = gameState.getAgentState(self.index)
-        myPos = gameState.getAgentState(self.index).getPosition()
-        prevState = self.getPreviousObservation()
-        if prevState is not None:
-            prevPos = prevState.getAgentState(self.index).getPosition()
-            if (myPos == prevPos):
-                features['frozen'] = 1  # disincentivize freezing up
+        myPos = myState.getPosition()
 
+        # Computes whether we're on defense (1) or offense (0).
         features['onDefense'] = 1
         if (myState.isPacman()):
             features['onDefense'] = 0
 
+        # Computes distance to invaders we can see.
         enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
         invaders = [a for a in enemies if a.isPacman() and a.getPosition() is not None]
         features['numInvaders'] = len(invaders)
-        # if there are no invaders, try to minimize distance between us and enemies
-        features['distanceToEnemies'] = 0
-        features['distanceToInvader'] = 0
-        if (len(invaders) > 0):  # if there's an invader, they take priority
+
+        if (len(invaders) > 0):
             dists = [self.getMazeDistance(myPos, a.getPosition()) for a in invaders]
-            features['distanceToInvader'] = 1 / (min(dists) + 1)
-            # incentivize agent to reduce the number of invaders by eating them
-        else:
-            dists = [self.getMazeDistance(myPos, a.getPosition()) for a in enemies]
-            for dist in dists:
-                features['distanceToEnemies'] += 1 / (dist + 1)
+            features['invaderDistance'] = min(dists)
 
         stateEval = sum(features[feature] * weights[feature] for feature in features)
         return stateEval
