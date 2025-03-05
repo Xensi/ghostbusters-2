@@ -20,6 +20,58 @@ def createTeam(firstIndex, secondIndex, isRed,
         firstAgent(firstIndex),
         secondAgent(secondIndex),
     ]
+#####  DEFENSE EVALUATION FUNCTION ########
+def defense_evaluation(self, currentGameState):
+    # Get the current position of the agent
+    myState = currentGameState(self.index)
+    myPosition = myState.getPosition()
+
+    #intialize the score
+    score = 0
+    #weights for each factor
+    enemyweight = 10
+    capsuleweight = 5
+    foodweight = 1
+    #First Factor: Number of Nearby Enemies based on their distance
+    enemies = self.getOpponents(currentGameState)
+    enemyProximity = 0
+    for enemy in enemies:
+        enemyPos = currentGameState.getAgentState(enemy).getPosition()
+        if enemyPos is not None: #if there are enemies
+            distance = self.getMazeDistance(myPos, enemyPos) #get the distance between enemy and me
+            distance = distance + 1 #so that we don't divide by 0 in the next line
+            score += ( 1 / distance ) * enemyweight
+            ##the following lines are another implementation that I think is worse
+            #if distance <= 5: #how close should it be? #
+            #    enemyProximity += 1
+            ### Another thought would be to more heavily weigh closer, and less heavily further
+            # if distance <= 2:
+            #   enemyProximity += 1
+            # if distance <= 5:
+            #   enemyProxomity += 1
+            # if distance <= 10:
+            #   enemyProximity += 1
+
+    #for each proximate enemy, the score increases by some amount of weight
+    #weight = 10
+    #score += enemyProximity * weight
+
+    #Second Factor: How close we are to power pellets
+    capsules = self.getCapsules()
+    if capsules: #if there are available capsules
+        nearestCapsuleDist = min([self.getMazeDistance(myPos, capsule) for capsule in capsules)])
+        nearestCapsuleDist = nearestCapsuleDist + 1
+        score += (1 / nearestCapsuleDist) * capsuleweight
+
+    #Third Factor: Proximity to defended food
+    DefendFood = self.getFoodYouAreDefending(currentGameState)
+    if DefendFood: #if there is some food to defend
+        foodPositions = DefendFood.asList()
+        nearestFoodDist = min([self.getMazeDistance(myPos, food) for food in foodPositions])
+        nearestFoodDist = nearestFoodDist + 1
+        score += (1 / nearestFoodDist) * foodweight
+
+    return score
 
 class AttackAgent(ReflexCaptureAgent):
     """
