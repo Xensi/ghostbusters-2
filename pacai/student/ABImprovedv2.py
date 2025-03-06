@@ -45,54 +45,12 @@ class ABPruningCaptureAgent(CaptureAgent):
         self.agentAndEnemiesIndices = []
         self.agentAndEnemiesIndices.append(self.index)
         opponents = self.getOpponents(gameState)
-        sampleEnemyPos = None
         for opp in opponents:
             self.agentAndEnemiesIndices.append(opp)
-            enemy = gameState.getAgentState(opp)
-            sampleEnemyPos = enemy.getPosition()
         self.depth = 2  # seems like we cannot handle depth 3+
         self.startAlpha = float('-inf')
         self.startBeta = float('inf')
         self.totalTime = gameState.getTimeleft()
-        self.startPos = gameState.getAgentState(self.index).getPosition()
-        self.enemyStartPos = sampleEnemyPos
-        
-        self.enemyScared = False
-        self.scared = False
-        self.enemyScaredTime = 0
-        self.scaredTime = 0
-        self.stuckTime = 0
-    
-    
-    def updateScared(self, gameState, prevState):
-        # If capsule existed in previous state and no longer exists, then
-        # depending on which side, update timer
-        if prevState is not None:
-            capsules = self.getCapsules(gameState)
-            prevCapsules = self.getCapsules(prevState)
-            
-            defendCapsules = self.getCapsulesYouAreDefending(gameState)
-            prevDefendCapsules = self.getCapsulesYouAreDefending(prevState)
-
-            if len(capsules) != len(prevCapsules):  # a capsule has been eaten
-                self.enemyScaredTime = 40
-                
-            if len(defendCapsules) != len(prevDefendCapsules):  # a capsule has been eaten
-                self.scaredTime = 40
-
-            if self.enemyScaredTime > 0:
-                # print("Enemy scared", self.enemyScaredTime)
-                self.enemyScaredTime -= 1
-                self.enemyScared = True
-            else:
-                self.enemyScared = False
-                
-            if self.scaredTime > 0:
-                # print("Scared", self.scaredTime)
-                self.scaredTime -= 1
-                self.scared = True
-            else:
-                self.scared = False
 
     def chooseAction(self, gameState):
         """
@@ -185,14 +143,15 @@ class OffensiveABAgent(ABPruningCaptureAgent):
         """
         super().registerInitialState(gameState)
         self.depth = 2
+        self.stuckTime = 0
 
     def chooseAction(self, gameState):
         """
         Use AB pruning to find the best action.
         """
         legalMoves = gameState.getLegalActions(self.index)
+        # check if we're in a stalemate
         myPos = gameState.getAgentState(self.index).getPosition()
-        # check if we're in a stalemate;
         prevState = self.getPreviousObservation()
         if prevState is not None:
             prevPos = prevState.getAgentState(self.index).getPosition()
@@ -217,8 +176,6 @@ class OffensiveABAgent(ABPruningCaptureAgent):
                 closestEnemyIndex = oppIndex
         self.agentAndEnemiesIndices = [self.index, closestEnemyIndex]
         # End of updating closest enemy index
-
-        self.updateScared(gameState, prevState)
 
         successors = [self.getSuccessor(gameState, action, self.index) for action in legalMoves]
         scores = []
@@ -250,18 +207,14 @@ class OffensiveABAgent(ABPruningCaptureAgent):
             'numberOfGhosts': -1000,
             'distanceToCapsule': 50,
             'numCapsules': -100,
-            'frozen': -1,
-            'attacking': 10,
+            'frozen': -10,
+            'attacking': 1,
             'numInvaders': -1000,
             'distanceToInvader': 1,
-            'alive': 1,
-            'numAliveOpponents': -1000,
-            'numScaredGhosts': -100,
         }
         myState = gameState.getAgentState(self.index)
         myPos = gameState.getAgentState(self.index).getPosition()
         prevState = self.getPreviousObservation()
-        prevPos = None
         if prevState is not None:
             prevPos = prevState.getAgentState(self.index).getPosition()
             if (myPos == prevPos):
@@ -271,27 +224,8 @@ class OffensiveABAgent(ABPruningCaptureAgent):
         if (myState.isPacman()):
             features['attacking'] = 1
 
-        # a state leads to us dying if our position changes from our previous state
-        # and the new state is in the starting position
-        if prevPos is not None:
-            killed = prevPos != myPos and myPos == self.startPos
-            features['alive'] = 1
-            if killed:
-                features['alive'] = 0
-
         # allies = [gameState.getAgentState(i) for i in self.getTeam(gameState) if i != self.index]
         enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
-
-        features['numAliveOpponents'] = len(enemies)
-        for opp in self.getOpponents(gameState):
-            prevEnemyPos = None
-            if prevState is not None:
-                prevEnemyPos = prevState.getAgentState(opp).getPosition()
-                currentEnemyPos = gameState.getAgentState(opp).getPosition()
-                if prevEnemyPos != currentEnemyPos and currentEnemyPos == self.enemyStartPos:
-                    features['numAliveOpponents'] -= 1
-        # tell agent to KILL enemies
-
         ghosts = [a for a in enemies if not a.isPacman() and a.getPosition() is not None]
         # Compute distance to the nearest food.
         foodList = self.getFood(gameState).asList()
@@ -311,24 +245,11 @@ class OffensiveABAgent(ABPruningCaptureAgent):
         features['numInvaders'] = len(invaders)
         # if there's an invader and we're a ghost
         features['distanceToInvader'] = 0
-        # do not chase invaders if we are scared!
-        if (len(invaders) > 0 and not myState.isPacman() and not self.scared):
+        if (len(invaders) > 0 and not myState.isPacman()):
             dists = [self.getMazeDistance(myPos, a.getPosition()) for a in invaders]
-            features['distanceToInvader'] = 1 / (min(dists) + 1)
+            features['distanceToInvader'] = 1 / (min(dists)**2 + 1)
             # incentivize agent to reduce the number of invaders by eating them
-        
-        # Kill scared ghosts if we can, but DO NOT CHASE THEM
-        features['numScaredGhosts'] = 0
-        if (len(ghosts) > 0 and self.enemyScared):
-            features['numScaredGhosts'] = len(ghosts)
-            for opp in self.getOpponents(gameState):
-                if not gameState.getAgentState(opp).isPacman():
-                    prevEnemyPos = None
-                    if prevState is not None:
-                        prevEnemyPos = prevState.getAgentState(opp).getPosition()
-                        curEnemyPos = gameState.getAgentState(opp).getPosition()
-                        if prevEnemyPos != curEnemyPos and curEnemyPos == self.enemyStartPos:
-                            features['numScaredGhosts'] -= 1
+            # but only if we're very close already
 
         stateEval = sum(features[feature] * weights[feature] for feature in features)
         return stateEval
@@ -346,6 +267,7 @@ class DefensiveABAgent(ABPruningCaptureAgent):
         """
         super().registerInitialState(gameState)
         self.depth = 2
+        self.stuckTime = 0
         
     def chooseAction(self, gameState):
         """
@@ -353,7 +275,6 @@ class DefensiveABAgent(ABPruningCaptureAgent):
         """
         legalMoves = gameState.getLegalActions(self.index)
         myPos = gameState.getAgentState(self.index).getPosition()
-        prevState = self.getPreviousObservation()
         # Defender should only AB prune on the closest invader
         # enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
         opponents = self.getOpponents(gameState)
@@ -368,8 +289,6 @@ class DefensiveABAgent(ABPruningCaptureAgent):
                     closestEnemyIndex = oppIndex
         self.agentAndEnemiesIndices = [self.index, closestEnemyIndex]
         # End of updating closest enemy index
-        
-        self.updateScared(gameState, prevState)
 
         successors = [self.getSuccessor(gameState, action, self.index) for action in legalMoves]
         scores = []
@@ -399,18 +318,15 @@ class DefensiveABAgent(ABPruningCaptureAgent):
         weights = {
             'distanceToEnemies': 1,
             'distanceToInvader': 100,
-            'onDefense': 1,
+            'onDefense': 1000,
             'numInvaders': -1000,
-            'frozen': 0,
-            'alive': 10,
-            'distanceBetweenEnemyAndFood': 100
+            'frozen': -1
         }
         # idea: defensive should be able to hunt down nearby scared ghosts
 
         myState = gameState.getAgentState(self.index)
         myPos = gameState.getAgentState(self.index).getPosition()
         prevState = self.getPreviousObservation()
-        prevPos = None
         if prevState is not None:
             prevPos = prevState.getAgentState(self.index).getPosition()
             if (myPos == prevPos):
@@ -419,24 +335,8 @@ class DefensiveABAgent(ABPruningCaptureAgent):
         features['onDefense'] = 1
         if (myState.isPacman()):
             features['onDefense'] = 0
-        
-        if prevPos is not None:
-            killed = prevPos != myPos and myPos == self.startPos
-            features['alive'] = 1
-            if killed:
-                features['alive'] = 0
 
         enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
-        foodList = self.getFood(gameState).asList()
-        
-        # maximize distance between enemy and food
-        features['distanceBetweenEnemyAndFood'] = 0
-        for enemy in enemies:
-            if (len(foodList) > 0):
-                minDistance = min([self.getMazeDistance(enemy.getPosition(), food) 
-                    for food in foodList])
-                features['distanceBetweenEnemyAndFood'] += minDistance
-
         invaders = [a for a in enemies if a.isPacman() and a.getPosition() is not None]
         features['numInvaders'] = len(invaders)
         features['distanceToEnemies'] = 0
