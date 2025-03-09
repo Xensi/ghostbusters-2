@@ -196,7 +196,7 @@ class OffensiveABAgent(ABPruningCaptureAgent):
         if prevState is not None:
             prevPos = prevState.getAgentState(self.index).getPosition()
             if (myPos == prevPos):
-                if self.stuckTime >= 10:
+                if self.stuckTime >= 2:
                     return random.choice(legalMoves)
                     self.stuckTime = 0
                 else:
@@ -244,19 +244,19 @@ class OffensiveABAgent(ABPruningCaptureAgent):
             'successorScore': self.getScore(gameState)
         }
         weights = {
-            'successorScore': 100,
             'distanceToFood': 10,
-            'numberOfGhosts': -1000,
             'distanceToCapsule': 50,
+            'distanceToInvader': 1,
+            'successorScore': 100,
+            'numberOfGhosts': -1000,
             'numCapsules': -100,
             'frozen': -1,
             'attacking': 10,
             'numInvaders': -1000,
-            'distanceToInvader': 1,
             'alive': 1,
             'numAliveOpponents': -1000,
             'numScaredGhosts': -100,
-            'bestFoodItem': -125,
+            'bestFoodItem': -5,  # prioritize safe food less than distanceToFood
         }
         myState = gameState.getAgentState(self.index)
         myPos = gameState.getAgentState(self.index).getPosition()
@@ -296,29 +296,20 @@ class OffensiveABAgent(ABPruningCaptureAgent):
         # Compute distance to the nearest food.
         foodList = self.getFood(gameState).asList()
         
-        # # food eat action
-        # # compute the distance of ghosts to each food item
-        # # compute the distance of attack pacman to each food
-        # # captureBestFood is a list of value for the goodness of each food item
-        # captureBestFood = [float('-inf')] * len(foodList)
-        # if len(foodList) > 0:
-        #     for index, food in enumerate(foodList):
-        #         # let the close ghost are to a food item the more risky the food is
-        #         # high risk value means the food has high risk
-        #         foodRisk = 0
-        #         for a_ghost in ghosts:
-        #             foodRisk += self.getMazeDistance(food, a_ghost.getPosition())
-        #         # lets prioritize eating food close to attack pacman
-        #         # find out distance for each food item
-        #         foodDistance = self.getMazeDistance(myPos, food)
-        #         # evaluate the goodness of a food item by distance and risky it is
-        #         captureBestFood[index] = foodDistance - foodRisk
-        # # the best food in the captureBestFood list minimizes the risk and distance of a food item
-        # features['bestFoodItem'] = min(captureBestFood)
-        
         if (len(foodList) > 0):
             minDistance = min([self.getMazeDistance(myPos, food) for food in foodList])
             features['distanceToFood'] = 1 / minDistance**2 + 1
+        
+        if not self.enemyScared:
+            captureBestFood = [float('-inf')] * len(foodList)
+            if len(foodList) > 0:
+                for index, food in enumerate(foodList):
+                    foodRisk = 0
+                    for a_ghost in ghosts:
+                        foodRisk += self.getMazeDistance(food, a_ghost.getPosition())
+                    foodDistance = self.getMazeDistance(myPos, food)
+                    captureBestFood[index] = foodDistance - foodRisk
+            features['bestFoodItem'] = min(captureBestFood)
         
         capsuleList = self.getCapsules(gameState)
         if (len(capsuleList) > 0):
@@ -412,7 +403,7 @@ class DefensiveABAgent(ABPruningCaptureAgent):
         """
         # return self.defensiveEval(gameState)
         if self.scared:
-            return self.offensiveEval(gameState)
+            return OffensiveABAgent.offensiveEval(self, gameState)
         else:
             return self.defensiveEval(gameState)
     
@@ -484,97 +475,3 @@ class DefensiveABAgent(ABPruningCaptureAgent):
             features['distanceToEnemies'] = 1 / denom
         
         return sum(features[feature] * weights[feature] for feature in features)
-    
-    def offensiveEval(self, gameState):
-        features = {
-            'successorScore': self.getScore(gameState)
-        }
-        weights = {
-            'successorScore': 100,
-            'distanceToFood': 10,
-            'numberOfGhosts': -1000,
-            'distanceToCapsule': 50,
-            'numCapsules': -100,
-            'frozen': -1,
-            'attacking': 10,
-            'numInvaders': -1000,
-            'distanceToInvader': 1,
-            'alive': 1,
-            'numAliveOpponents': -1000,
-            'numScaredGhosts': -100,
-        }
-        myState = gameState.getAgentState(self.index)
-        myPos = gameState.getAgentState(self.index).getPosition()
-        prevState = self.getPreviousObservation()
-        prevPos = None
-        if prevState is not None:
-            prevPos = prevState.getAgentState(self.index).getPosition()
-            if (myPos == prevPos):
-                features['frozen'] = 1  # disincentivize freezing up
-
-        features['attacking'] = 0
-        if (myState.isPacman()):
-            features['attacking'] = 1
-
-        # a state leads to us dying if our position changes from our previous state
-        # and the new state is in the starting position
-        if prevPos is not None:
-            killed = prevPos != myPos and myPos == self.startPos
-            features['alive'] = 1
-            if killed:
-                features['alive'] = 0
-
-        # allies = [gameState.getAgentState(i) for i in self.getTeam(gameState) if i != self.index]
-        enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
-
-        features['numAliveOpponents'] = len(enemies)
-        for opp in self.getOpponents(gameState):
-            prevEnemyPos = None
-            if prevState is not None:
-                prevEnemyPos = prevState.getAgentState(opp).getPosition()
-                currentEnemyPos = gameState.getAgentState(opp).getPosition()
-                if prevEnemyPos != currentEnemyPos and currentEnemyPos == self.enemyStartPos:
-                    features['numAliveOpponents'] -= 1
-        # tell agent to KILL enemies
-
-        ghosts = [a for a in enemies if not a.isPacman() and a.getPosition() is not None]
-        # Compute distance to the nearest food.
-        foodList = self.getFood(gameState).asList()
-        if (len(foodList) > 0):
-            minDistance = min([self.getMazeDistance(myPos, food) for food in foodList])
-            features['distanceToFood'] = 1 / minDistance**2 + 1
-        
-        capsuleList = self.getCapsules(gameState)
-        if (len(capsuleList) > 0):
-            minDistance = min([self.getMazeDistance(myPos, capsule) for capsule in capsuleList])
-            features['distanceToCapsule'] = 1 / minDistance + 1  # try to go for capsules more
-        features['numCapsules'] = len(capsuleList)  # incentivize eating capsules
-
-        features['numberOfGhosts'] = len(ghosts)  # incentivizes us to reduce num ghosts
-
-        invaders = [a for a in enemies if a.isPacman() and a.getPosition() is not None]
-        features['numInvaders'] = len(invaders)
-        # if there's an invader and we're a ghost
-        features['distanceToInvader'] = 0
-        # do not chase invaders if we are scared!
-        if (len(invaders) > 0 and not myState.isPacman() and not self.scared):
-            dists = [self.getMazeDistance(myPos, a.getPosition()) for a in invaders]
-            features['distanceToInvader'] = 1 / (min(dists) + 1)
-            # incentivize agent to reduce the number of invaders by eating them
-        
-        # Kill scared ghosts if we can, but DO NOT CHASE THEM
-        features['numScaredGhosts'] = 0
-        if (len(ghosts) > 0 and self.enemyScared):
-            features['numScaredGhosts'] = len(ghosts)
-            for opp in self.getOpponents(gameState):
-                if not gameState.getAgentState(opp).isPacman():
-                    prevEnemyPos = None
-                    if prevState is not None:
-                        prevEnemyPos = prevState.getAgentState(opp).getPosition()
-                        curEnemyPos = gameState.getAgentState(opp).getPosition()
-                        if prevEnemyPos != curEnemyPos and curEnemyPos == self.enemyStartPos:
-                            features['numScaredGhosts'] -= 1
-
-        stateEval = sum(features[feature] * weights[feature] for feature in features)
-        return stateEval
-        
